@@ -318,7 +318,7 @@ class TelegramChannelScraper(snscrape.base.Scraper):
         channelInfoDiv = soup.find('div', class_='tgme_channel_info')
         assert channelInfoDiv, 'channel info div not found'
         titleDiv = channelInfoDiv.find('div', class_='tgme_channel_info_header_title')
-        kwargs['title'] = titleDiv.find('span').text
+        kwargs['title'] = titleDiv.find('span').get_text(separator=' ')
         kwargs['verified'] = bool(titleDiv.find('i', class_='verified-icon'))
         # The username in the channel info is not canonicalised, nor is the one on the /channel page anywhere.
         # However, the post URLs are, so extract the first post and use that.
@@ -328,14 +328,13 @@ class TelegramChannelScraper(snscrape.base.Scraper):
             # If there are no posts, fall back to the channel info div, although that should never happen due to the 'Channel created' entry.
             _logger.warning(
                 'Could not find a post; extracting username from channel info div, which may not be capitalised correctly')
-            kwargs['username'] = channelInfoDiv.find('div', class_='tgme_channel_info_header_username').text[
-                                 1:]  # Remove @
+            kwargs['username'] = channelInfoDiv.find('div', class_='tgme_channel_info_header_username').text[1:]  # Remove @
         if (descriptionDiv := channelInfoDiv.find('div', class_='tgme_channel_info_description')):
-            kwargs['description'] = descriptionDiv.text
+            kwargs['description'] = descriptionDiv.get_text(separator=' ')
 
         for div in channelInfoDiv.find_all('div', class_='tgme_channel_info_counter'):
             value, granularity = _parse_num(div.find('span', class_='counter_value').text)
-            type_ = div.find('span', class_='counter_type').text
+            type_ = div.find('span', class_='counter_type').get_text(separator=' ')
             if type_ == 'members':
                 # Already extracted more accurately from /channel, skip
                 continue
