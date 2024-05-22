@@ -22,7 +22,7 @@ Note that one of the dependencies, lxml, also requires libxml2 and libxslt to be
 
 If you want to use the development version:
 
-    pip3 install git+https://github.com/JustAnotherArchivist/snscrape.git
+    pip3 install git+https://github.com/salosyatov/snscrape.git
 
 ## Usage
 ### CLI
