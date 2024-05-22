@@ -6,6 +6,9 @@ import dataclasses
 import datetime
 import logging
 import re
+
+import markdownify
+
 import snscrape.base
 import typing
 import urllib.parse
@@ -64,6 +67,10 @@ class TelegramPost(snscrape.base.Item):
 	def __str__(self):
 		return self.url
 
+	@property
+	def message_id(self):
+		return int(self.url.split('/')[-1].split('?')[0]) if self.url else 0
+
 
 class Medium:
 	pass
@@ -85,7 +92,7 @@ class Video(Medium):
 class VoiceMessage(Medium):
 	url: str
 	duration: str
-	bars:typing.List[float]
+	bars: typing.List[float]
 
 
 @dataclasses.dataclass
@@ -97,12 +104,20 @@ class Gif(Medium):
 class TelegramChannelScraper(snscrape.base.Scraper):
 	name = 'telegram-channel'
 
-	def __init__(self, name, **kwargs):
+	def __init__(self, name, format='markdown', **kwargs):
 		super().__init__(**kwargs)
 		self._name = name
 		self._headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'}
 		self._initialPage = None
 		self._initialPageSoup = None
+		if format == 'html' or format == 'text':
+			self._format = format
+		elif format == 'markdown' or format == 'md':
+			self._format = 'markdown'
+		else:
+			self._format = 'text'
+
+		assert(self._format in ('text', 'markdown', 'html'))
 
 	def _initial_page(self):
 		if self._initialPage is None:
@@ -137,7 +152,12 @@ class TelegramChannelScraper(snscrape.base.Scraper):
 				forwarded = Channel(username = forwardedName)
 
 			if (message := post.find('div', class_ = 'tgme_widget_message_text')):
-				content = message.get_text(separator="\n")
+				if self._format == 'text':
+					content = message.get_text(separator="\n")
+				elif self._format == 'html':
+					content = str(message)
+				elif self._format == 'markdown':
+					content = markdownify.markdownify(str(message), heading_style="ATX")
 			else:
 				content = None
 
