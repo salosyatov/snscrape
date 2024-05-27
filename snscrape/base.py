@@ -168,7 +168,7 @@ class Scraper:
 			# The request is newly prepared on each retry because of potential cookie updates.
 			req = self._session.prepare_request(requests.Request(method, url, params = params, data = data, headers = headers))
 			environmentSettings = self._session.merge_environment_settings(req.url, proxies, None, None, None)
-			logger.info(f'Retrieving {req.url}')
+			logger.debug(f'Retrieving {req.url}')
 			logger.debug(f'... with headers: {headers!r}')
 			if data:
 				logger.debug(f'... with data: {data!r}')
@@ -186,7 +186,7 @@ class Scraper:
 				logger.log(level, f'Error retrieving {req.url}: {exc!r}{retrying}')
 			else:
 				redirected = f' (redirected to {r.url})' if r.history else ''
-				logger.info(f'Retrieved {req.url}{redirected}: {r.status_code}')
+				logger.debug(f'Retrieved {req.url}{redirected}: {r.status_code}')
 				if r.history:
 					for i, redirect in enumerate(r.history):
 						logger.debug(f'... request {i}: {redirect.request.url}: {r.status_code} (Location: {r.headers.get("Location")})')
