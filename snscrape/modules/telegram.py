@@ -34,6 +34,7 @@ class Channel(snscrape.base.Entity):
     photo: typing.Optional[str] = None
     description: typing.Optional[str] = None
     members: typing.Optional[int] = None
+    is_public: typing.Optional[bool] = None
     photos: typing.Optional[snscrape.base.IntWithGranularity] = None
     videos: typing.Optional[snscrape.base.IntWithGranularity] = None
     links: typing.Optional[snscrape.base.IntWithGranularity] = None
@@ -292,15 +293,18 @@ class TelegramChannelScraper(snscrape.base.Scraper):
                 raise snscrape.base.ScraperException(f'Got status code {r.status_code}')
             soup = bs4.BeautifulSoup(r.text, 'lxml')
 
-    def _get_entity(self):
+    def _parse_channel_info(self, text):
         kwargs = {}
-        # /channel has a more accurate member count and bigger profile picture
-        r = self._get(f'https://t.me/{self._name}', headers=self._headers)
-        if r.status_code != 200:
-            raise snscrape.base.ScraperException(f'Got status code {r.status_code}')
-        soup = bs4.BeautifulSoup(r.text, 'lxml')
+        soup = bs4.BeautifulSoup(text, 'lxml')
+
+        page_action_dive = soup.find('div', class_='tgme_page_action')
+        if action_a := page_action_dive.find('a', class_="tgme_action_button_new shine"):
+            kwargs['username'] = action_a.get('href', '').replace('tg://resolve?domain=', '')
+        if not kwargs.get('username', None):
+            return None
+
         membersDiv = soup.find('div', class_='tgme_page_extra')
-        if membersDiv.text.split(',')[0].endswith((' members', ' subscribers')):
+        if membersDiv and membersDiv.text.split(',')[0].endswith((' members', ' subscribers')):
             membersStr = ''.join(membersDiv.text.split(',')[0].split(' ')[:-1])
             if membersStr == 'no':
                 kwargs['members'] = 0
@@ -312,36 +316,53 @@ class TelegramChannelScraper(snscrape.base.Scraper):
         else:
             kwargs['photo'] = None
 
-        r, soup = self._initial_page()
-        if '/s/' not in r.url:  # Redirect on channels without public posts
-            return
-        channelInfoDiv = soup.find('div', class_='tgme_channel_info')
-        assert channelInfoDiv, 'channel info div not found'
-        titleDiv = channelInfoDiv.find('div', class_='tgme_channel_info_header_title')
-        kwargs['title'] = titleDiv.find('span').get_text(separator=' ')
-        kwargs['verified'] = bool(titleDiv.find('i', class_='verified-icon'))
-        # The username in the channel info is not canonicalised, nor is the one on the /channel page anywhere.
-        # However, the post URLs are, so extract the first post and use that.
-        try:
-            kwargs['username'] = next(self._soup_to_items(soup, r.url, onlyUsername=True))
-        except StopIteration:
-            # If there are no posts, fall back to the channel info div, although that should never happen due to the 'Channel created' entry.
-            _logger.warning(
-                'Could not find a post; extracting username from channel info div, which may not be capitalised correctly')
-            kwargs['username'] = channelInfoDiv.find('div', class_='tgme_channel_info_header_username').text[1:]  # Remove @
-        if (descriptionDiv := channelInfoDiv.find('div', class_='tgme_channel_info_description')):
-            kwargs['description'] = descriptionDiv.get_text(separator=' ')
+        titleDiv = soup.find('div', class_='tgme_page_title')
+        if titleDiv := soup.find('div', class_='tgme_page_title'):
+            kwargs['title'] = titleDiv.find('span').get_text(separator=' ').strip()
+        if descriptionDiv := soup.find('div', class_='tgme_page_description'):
+            kwargs['description'] = descriptionDiv.get_text(separator=' ').strip()
 
-        for div in channelInfoDiv.find_all('div', class_='tgme_channel_info_counter'):
-            value, granularity = _parse_num(div.find('span', class_='counter_value').text)
-            type_ = div.find('span', class_='counter_type').get_text(separator=' ')
-            if type_ == 'members':
-                # Already extracted more accurately from /channel, skip
-                continue
-            elif type_ in ('photos', 'videos', 'links', 'files'):
-                kwargs[type_] = snscrape.base.IntWithGranularity(value, granularity)
+        if context_link_a := soup.find('a', class_='tgme_page_context_link'):
+            href = context_link_a.get('href', '')
+            kwargs['is_public'] = '/s/' in href
+        else:
+            kwargs['is_public'] = False
+
+        channelInfoDiv = soup.find('div', class_='tgme_channel_info')
+        if channelInfoDiv:
+            titleDiv = channelInfoDiv.find('div', class_='tgme_channel_info_header_title')
+            kwargs['title'] = titleDiv.find('span').get_text(separator=' ')
+            kwargs['verified'] = bool(titleDiv.find('i', class_='verified-icon'))
+            # The username in the channel info is not canonicalised, nor is the one on the /channel page anywhere.
+            # However, the post URLs are, so extract the first post and use that.
+            posts = soup.find_all('div', attrs={'class': 'tgme_widget_message', 'data-post': True})
+            if posts:
+                post = posts[-1]
+                kwargs['username'] = post['data-post'].split('/')[0]
+            else:
+                _logger.warning(
+                    'Could not find a post; extracting username from channel info div, which may not be capitalised correctly')
+                kwargs['username'] = channelInfoDiv.find('div', class_='tgme_channel_info_header_username').text[
+                                     1:]  # Remove @
+
+            if descriptionDiv := channelInfoDiv.find('div', class_='tgme_channel_info_description'):
+                kwargs['description'] = descriptionDiv.get_text(separator=' ')
+
+            for div in channelInfoDiv.find_all('div', class_='tgme_channel_info_counter'):
+                value, granularity = _parse_num(div.find('span', class_='counter_value').text)
+                type_ = div.find('span', class_='counter_type').get_text(separator=' ')
+                if type_ == 'members':
+                    # Already extracted more accurately from /channel, skip
+                    continue
+                elif type_ in ('photos', 'videos', 'links', 'files'):
+                    kwargs[type_] = snscrape.base.IntWithGranularity(value, granularity)
 
         return Channel(**kwargs)
+
+    def _get_entity(self):
+        r, soup = self._initial_page()
+        return self._parse_channel_info(r.text)
+
 
     @classmethod
     def _cli_setup_parser(cls, subparser):
