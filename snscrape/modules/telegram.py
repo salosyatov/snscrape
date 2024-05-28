@@ -123,13 +123,18 @@ class TelegramChannelScraper(snscrape.base.Scraper):
 
         assert (self._format in ('text', 'markdown', 'html'))
 
-    def _initial_page(self):
-        if self._initialPage is None:
-            r = self._get(f'https://t.me/s/{self._name}', headers=self._headers)
-            if r.status_code != 200:
-                raise snscrape.base.ScraperException(f'Got status code {r.status_code}')
-            self._initialPage, self._initialPageSoup = r, bs4.BeautifulSoup(r.text, 'lxml')
-        return self._initialPage, self._initialPageSoup
+    def _initial_page(self, with_posts=True):
+        url = f'https://t.me/s/{self._name}' if with_posts else f'https://t.me/{self._name}'
+        r = self._get(url, headers=self._headers)
+        if r.status_code != 200:
+            raise snscrape.base.ScraperException(f'Got status code {r.status_code}')
+
+        soup =  bs4.BeautifulSoup(r.text, 'lxml')
+        if with_posts and self._initialPage is None:
+            self._initialPage = r
+            self._initialPageSoup = soup
+
+        return r, soup
 
     def _soup_to_items(self, soup, pageUrl, onlyUsername=False):
         posts = soup.find_all('div', attrs={'class': 'tgme_widget_message', 'data-post': True})
@@ -264,7 +269,7 @@ class TelegramChannelScraper(snscrape.base.Scraper):
                                forwardedUrl=forwardedUrl, views=views, message_id=message_id)
 
     def get_items(self):
-        r, soup = self._initial_page()
+        r, soup = self._initial_page(with_posts=True)
         if '/s/' not in r.url:
             _logger.warning('No public post list for this user')
             return
@@ -297,9 +302,10 @@ class TelegramChannelScraper(snscrape.base.Scraper):
         kwargs = {}
         soup = bs4.BeautifulSoup(text, 'lxml')
 
-        page_action_dive = soup.find('div', class_='tgme_page_action')
-        if action_a := page_action_dive.find('a', class_="tgme_action_button_new shine"):
-            kwargs['username'] = action_a.get('href', '').replace('tg://resolve?domain=', '')
+        page_action_div = soup.find('div', class_='tgme_page_action')
+        if page_action_div:
+            if action_a := page_action_div.find('a', class_="tgme_action_button_new shine"):
+                kwargs['username'] = action_a.get('href', '').replace('tg://resolve?domain=', '')
         if not kwargs.get('username', None):
             return None
 
@@ -360,7 +366,7 @@ class TelegramChannelScraper(snscrape.base.Scraper):
         return Channel(**kwargs)
 
     def _get_entity(self):
-        r, soup = self._initial_page()
+        r, soup = self._initial_page(with_posts=False)
         return self._parse_channel_info(r.text)
 
 

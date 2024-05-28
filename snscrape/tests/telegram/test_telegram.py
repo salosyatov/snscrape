@@ -40,3 +40,20 @@ def test_parse_deleted_html():
     channel = TelegramChannelScraper(channel_name)._parse_channel_info(text)
 
     assert channel is None
+
+
+def test_parse_online_channel():
+    channel_name = 'zadarom'
+    channel = TelegramChannelScraper(channel_name).entity
+
+    assert isinstance(channel, Channel)
+    assert channel.username == channel_name
+
+
+def test_get_items_online_channel():
+    channel_name = 'zadarom'
+    scraper = TelegramChannelScraper(channel_name)
+    gen = scraper.get_items()
+    latest_post = next(gen)
+    previous_post = next(gen)
+    assert latest_post.message_id > previous_post.message_id
